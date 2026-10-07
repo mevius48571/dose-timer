@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>次の服用タイマー</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<style>
+  /* Layout: one narrow column. Add-form on top, then one card per medicine with a status pill, next time and today's doses. */
+  :root {
+    --bg: #f2f5f6;
+    --surface: #ffffff;
+    --ink: #17282f;
+    --muted: #5a6d75;
+    --line: #d6dfe3;
+    --accent: #1e7574;
+    --accent-soft: #dcefee;
+    --on-accent: #ffffff;
+    --ok: #237a4b;
+    --ok-soft: #dbf0e3;
+    --wait: #a8641a;
+    --wait-soft: #f6e8d3;
+    --danger: #b3261e;
+    --danger-soft: #f8dedc;
+    --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1a1e; --surface: #17262c; --ink: #e4eef1; --muted: #9db2ba; --line: #2b3f47;
+      --accent: #58c0bd; --accent-soft: #17383a; --on-accent: #06201f;
+      --ok: #6fcf97; --ok-soft: #173326; --wait: #e5a965; --wait-soft: #3a2a14;
+      --danger: #f08a82; --danger-soft: #3d1c1a;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f1a1e; --surface: #17262c; --ink: #e4eef1; --muted: #9db2ba; --line: #2b3f47;
+    --accent: #58c0bd; --accent-soft: #17383a; --on-accent: #06201f;
+    --ok: #6fcf97; --ok-soft: #173326; --wait: #e5a965; --wait-soft: #3a2a14;
+    --danger: #f08a82; --danger-soft: #3d1c1a;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.7;
+    padding-inline: 16px; padding-block: 28px 56px;
+  }
+  .wrap { max-width: 520px; margin-inline: auto; display: flex; flex-direction: column; gap: 22px; min-width: 0; }
+  h1 { margin: 0; font-size: 26px; line-height: 1.3; letter-spacing: 0.02em; text-wrap: balance; }
+  h2 { margin: 0; font-size: 17px; line-height: 1.4; overflow-wrap: anywhere; }
+  p { margin: 0; }
+  .sub { color: var(--muted); font-size: 14px; margin-top: 6px; }
+  .now { font-family: var(--font-mono); font-size: 13px; color: var(--muted); margin-top: 6px; font-variant-numeric: tabular-nums; }
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .fld { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .fld label { font-size: 12px; color: var(--muted); letter-spacing: 0.04em; }
+  input { font: inherit; font-size: 16px; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 9px 10px; width: 100%; min-width: 0; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .btn { font: inherit; font-weight: 700; min-height: 44px; padding: 0 18px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  .btn.ghost { color: var(--accent); border-color: var(--accent); background: transparent; }
+  .link { font: inherit; font-size: 13px; background: none; border: 0; padding: 6px 2px; color: var(--muted); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+  .link.armed { color: var(--danger); font-weight: 700; }
+  button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .err { color: var(--danger); font-size: 13px; min-height: 20px; }
+  .list { display: flex; flex-direction: column; gap: 14px; }
+  .head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+  .pill { flex: 0 0 auto; font-size: 13px; font-weight: 700; padding: 2px 12px; border-radius: 99px; white-space: nowrap; }
+  .pill.ok { background: var(--ok-soft); color: var(--ok); }
+  .pill.wait { background: var(--wait-soft); color: var(--wait); }
+  .pill.limit { background: var(--danger-soft); color: var(--danger); }
+  .next { font-size: 16px; font-weight: 700; }
+  .next .t { font-family: var(--font-mono); font-size: 22px; font-variant-numeric: tabular-nums; }
+  .meta { display: flex; flex-wrap: wrap; gap: 2px 14px; font-size: 13px; color: var(--muted); }
+  .acts { display: flex; flex-wrap: wrap; gap: 10px; }
+  .acts .btn { flex: 1 1 140px; }
+  .tform { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: end; }
+  .doses { display: flex; flex-wrap: wrap; gap: 6px; }
+  .dose { font-family: var(--font-mono); font-size: 13px; padding: 1px 10px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); font-variant-numeric: tabular-nums; }
+  .row-end { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .empty { border: 1px dashed var(--line); border-radius: 8px; padding: 22px 16px; text-align: center; color: var(--muted); }
+  .note { font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>次の服用タイマー</h1>
+    <p class="sub">飲んだ時刻と間隔から、次に飲める時刻を出します。</p>
+    <p class="now" id="now"></p>
+  </header>
+
+  <form class="panel" id="add" novalidate>
+    <div class="fld">
+      <label for="f-name">薬の名前</label>
+      <input id="f-name" type="text" placeholder="例：お薬A" autocomplete="off">
+    </div>
+    <div class="two">
+      <div class="fld">
+        <label for="f-int">飲む間隔(時間)</label>
+        <input id="f-int" type="number" inputmode="decimal" min="0.5" max="48" step="0.5" value="6">
+      </div>
+      <div class="fld">
+        <label for="f-max">1日の上限回数</label>
+        <input id="f-max" type="number" inputmode="numeric" min="1" max="24" step="1" value="3">
+      </div>
+    </div>
+    <p class="err" id="err" role="alert"></p>
+    <button class="btn primary" type="submit">薬を追加</button>
+  </form>
+
+  <section class="list" id="list" aria-label="薬の一覧"></section>
+
+  <footer class="note">
+    <p>間隔や回数は、薬の説明書に書かれている内容を自分で入れてください。薬の飲み方は、必ず説明書と、医師・薬剤師の指示に従ってください。このツールは自分用のメモ代わりで、飲んでよいかどうかを判断するものではありません。</p>
+    <p>1日の区切りは朝5時です。深夜0〜5時の記録は、前日の分として数えます。記録はこのブラウザの中にだけ保存され、どこにも送信されません。</p>
+  </footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var KEY = "next-dose-timer-v1";
+  var DAY_START_H = 5;
+  var KEEP_MS = 3 * 86400000;
+  var meds = [];
+  var armed = null;
+  var openTime = null;
+  var tickTimer = null;
+
+  function $(id) { return document.getElementById(id); }
+  function h(tag, cls, text) {
+    var el = document.createElement(tag);
+    if (cls) el.className = cls;
+    if (text != null) el.textContent = text;
+    return el;
+  }
+  function pad(n) { return (n < 10 ? "0" : "") + n; }
+  function uid() { return "m" + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36); }
+
+  /* ---------- storage ---------- */
+  function valid(m) {
+    return m && typeof m.id === "string" && typeof m.name === "string" &&
+      typeof m.interval === "number" && typeof m.max === "number" && Array.isArray(m.doses);
+  }
+  function load() {
+    try {
+      var raw = localStorage.getItem(KEY);
+      if (raw) { var a = JSON.parse(raw); if (Array.isArray(a)) meds = a.filter(valid); }
+    } catch (e) {}
+  }
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(meds)); } catch (e) {} }
+  function prune() {
+    var limit = Date.now() - KEEP_MS;
+    meds.forEach(function (m) { m.doses = m.doses.filter(function (t) { return t >= limit; }).sort(function (a, b) { return a - b; }); });
+  }
+
+  /* ---------- time helpers (device local time) ---------- */
+  function dayKey(ms) {
+    var d = new Date(ms - DAY_START_H * 3600000);
+    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+  }
+  function nextBoundary(now) {
+    var d = new Date(now);
+    d.setHours(DAY_START_H, 0, 0, 0);
+    if (d.getTime() <= now) d.setDate(d.getDate() + 1);
+    return d.getTime();
+  }
+  function startOfDay(ms) { var d = new Date(ms); d.setHours(0, 0, 0, 0); return d.getTime(); }
+  function clock(ms) { var d = new Date(ms); return d.getHours() + ":" + pad(d.getMinutes()); }
+  function clockWithDay(ms, now) {
+    var diff = Math.round((startOfDay(ms) - startOfDay(now)) / 86400000);
+    var d = new Date(ms);
+    var prefix = diff === 0 ? "" : diff === 1 ? "明日 " : (d.getMonth() + 1) + "/" + d.getDate() + " ";
+    return prefix + clock(ms);
+  }
+  function remainText(ms) {
+    var mins = Math.max(1, Math.ceil(ms / 60000));
+    var hh = Math.floor(mins / 60), mm = mins % 60;
+    return "あと " + (hh > 0 ? hh + "時間" : "") + (mm > 0 ? mm + "分" : "");
+  }
+  function inputVal(ms) {
+    var d = new Date(ms);
+    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + "T" + pad(d.getHours()) + ":" + pad(d.getMinutes());
+  }
+  function numText(n) { return String(Math.round(n * 100) / 100); }
+
+  /* ---------- status ---------- */
+  function statusOf(m, now) {
+    var key = dayKey(now);
+    var today = m.doses.filter(function (t) { return dayKey(t) === key; });
+    var last = m.doses.length ? m.doses[m.doses.length - 1] : null;
+    var byInterval = last != null ? last + m.interval * 3600000 : null;
+    if (today.length >= m.max) {
+      var at = Math.max(byInterval || 0, nextBoundary(now));
+      return { state: "limit", at: at, today: today, last: last };
+    }
+    if (byInterval != null && now < byInterval) return { state: "wait", at: byInterval, today: today, last: last };
+    return { state: "ok", at: null, today: today, last: last };
+  }
+
+  /* ---------- render ---------- */
+  function renderCard(m, now) {
+    var st = statusOf(m, now);
+    var card = h("article", "panel");
+
+    var head = h("div", "head");
+    head.appendChild(h("h2", null, m.name));
+    var pillText = st.state === "ok" ? "飲めます" : st.state === "wait" ? remainText(st.at - now) : "今日は上限";
+    head.appendChild(h("span", "pill " + st.state, pillText));
+    card.appendChild(head);
+
+    var next = h("div", "next");
+    if (st.state === "ok") {
+      next.textContent = st.last != null ? "前回 " + clockWithDay(st.last, now) + "。いま飲めます。" : "まだ記録がありません。";
+    } else {
+      next.appendChild(document.createTextNode("次に飲めるのは "));
+      next.appendChild(h("span", "t", clockWithDay(st.at, now)));
+      next.appendChild(document.createTextNode(" 以降"));
+    }
+    card.appendChild(next);
+
+    var meta = h("div", "meta");
+    meta.appendChild(h("span", null, "間隔 " + numText(m.interval) + "時間"));
+    meta.appendChild(h("span", null, "1日 最大" + m.max + "回"));
+    meta.appendChild(h("span", null, "今日 " + st.today.length + "回"));
+    card.appendChild(meta);
+
+    if (st.today.length) {
+      var doses = h("div", "doses");
+      st.today.forEach(function (t) { doses.appendChild(h("span", "dose", clock(t))); });
+      card.appendChild(doses);
+    }
+
+    var acts = h("div", "acts");
+    var nowBtn = h("button", "btn primary", "いま飲んだ"); nowBtn.type = "button";
+    nowBtn.addEventListener("click", function () { addDose(m.id, Date.now()); });
+    var timeBtn = h("button", "btn ghost", "時刻を指定"); timeBtn.type = "button";
+    timeBtn.addEventListener("click", function () { openTime = openTime === m.id ? null : m.id; render(); });
+    acts.appendChild(nowBtn); acts.appendChild(timeBtn);
+    card.appendChild(acts);
+
+    if (openTime === m.id) {
+      var tf = h("div", "tform");
+      var fld = h("div", "fld");
+      var lab = h("label", null, "飲んだ日時"); lab.htmlFor = "t-" + m.id;
+      var inp = document.createElement("input");
+      inp.id = "t-" + m.id; inp.type = "datetime-local"; inp.value = inputVal(Date.now());
+      fld.appendChild(lab); fld.appendChild(inp);
+      var ok = h("button", "btn primary", "記録"); ok.type = "button";
+      ok.addEventListener("click", function () {
+        var t = Date.parse(inp.value);
+        if (isNaN(t)) return;
+        openTime = null;
+        addDose(m.id, t);
+      });
+      tf.appendChild(fld); tf.appendChild(ok);
+      card.appendChild(tf);
+    }
+
+    var end = h("div", "row-end");
+    var undo = h("button", "link", "最後の記録を取り消す"); undo.type = "button";
+    undo.disabled = !m.doses.length;
+    undo.addEventListener("click", function () { m.doses.pop(); save(); render(); });
+    var del = h("button", "link" + (armed === m.id ? " armed" : ""), armed === m.id ? "本当に削除" : "この薬を削除"); del.type = "button";
+    del.addEventListener("click", function () {
+      if (armed !== m.id) {
+        armed = m.id; render();
+        setTimeout(function () { if (armed === m.id) { armed = null; render(); } }, 4000);
+        return;
+      }
+      meds = meds.filter(function (x) { return x.id !== m.id; });
+      armed = null; save(); render();
+    });
+    end.appendChild(undo); end.appendChild(del);
+    card.appendChild(end);
+    return card;
+  }
+
+  function updateNow(now) {
+    var d = new Date(now);
+    var wd = ["日", "月", "火", "水", "木", "金", "土"][d.getDay()];
+    $("now").textContent = "現在 " + (d.getMonth() + 1) + "/" + d.getDate() + "(" + wd + ") " + clock(now);
+  }
+
+  function render() {
+    var now = Date.now();
+    updateNow(now);
+    var box = $("list");
+    box.textContent = "";
+    if (!meds.length) {
+      box.appendChild(h("div", "empty", "薬を追加すると、ここに次に飲める時刻が出ます。"));
+      return;
+    }
+    meds.forEach(function (m) { box.appendChild(renderCard(m, now)); });
+  }
+
+  function addDose(id, ts) {
+    meds.forEach(function (m) {
+      if (m.id === id) { m.doses.push(ts); m.doses.sort(function (a, b) { return a - b; }); }
+    });
+    prune(); save(); render();
+  }
+
+  /* ---------- add form ---------- */
+  $("add").addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    var err = $("err");
+    var name = $("f-name").value.trim();
+    var iv = Number($("f-int").value);
+    var mx = Number($("f-max").value);
+    if (!name) { err.textContent = "薬の名前を入れてください。"; return; }
+    if (!(iv >= 0.5 && iv <= 48)) { err.textContent = "間隔は0.5〜48時間で入れてください。"; return; }
+    if (!(mx >= 1 && mx <= 24) || Math.floor(mx) !== mx) { err.textContent = "上限回数は1〜24の整数で入れてください。"; return; }
+    err.textContent = "";
+    meds.push({ id: uid(), name: name, interval: iv, max: mx, doses: [] });
+    save();
+    $("f-name").value = "";
+    render();
+  });
+
+  load(); prune(); render();
+  tickTimer = setInterval(function () {
+    if (openTime === null && document.activeElement !== $("f-name")) render(); else updateNow(Date.now());
+  }, 30000);
+})();
+</script>
+</body>
+</html>
